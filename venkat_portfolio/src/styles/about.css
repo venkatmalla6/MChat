@@ -1,0 +1,123 @@
+.about-page {
+    padding-top: 100px;
+    max-width: 1000px;
+    margin: 0 auto;
+    padding-left: var(--spacing-md);
+    padding-right: var(--spacing-md);
+}
+
+.about-hero {
+    text-align: center;
+    margin-bottom: var(--spacing-xl);
+}
+
+.about-hero h1 {
+    font-size: 3rem;
+    margin-bottom: var(--spacing-md);
+}
+
+.about-hero .lead {
+    font-size: 1.25rem;
+    color: var(--text-secondary);
+    max-width: 700px;
+    margin: 0 auto;
+}
+
+.about-section {
+    margin-bottom: var(--spacing-xl);
+}
+
+.about-section h2 {
+    font-size: 1.75rem;
+    margin-bottom: var(--spacing-lg);
+    color: var(--primary-color);
+    border-bottom: 2px solid var(--border-color);
+    padding-bottom: var(--spacing-sm);
+    display: inline-block;
+}
+
+.about-card {
+    background: var(--bg-secondary);
+    padding: var(--spacing-lg);
+    border-radius: 8px;
+    border-left: 4px solid var(--primary-color);
+    font-size: 1.1rem;
+    line-height: 1.8;
+}
+
+.skills-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: var(--spacing-lg);
+}
+
+.skill-category {
+    background: var(--bg-secondary);
+    padding: var(--spacing-lg);
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+}
+
+.skill-category h3 {
+    margin-bottom: var(--spacing-md);
+    font-size: 1.2rem;
+}
+
+.skill-category ul {
+    list-style: none;
+    padding: 0;
+}
+
+.skill-category li {
+    margin-bottom: var(--spacing-sm);
+    padding-left: 1.5rem;
+    position: relative;
+}
+
+.skill-category li::before {
+    content: '•';
+    color: var(--primary-color);
+    font-weight: bold;
+    position: absolute;
+    left: 0;
+}
+
+/* Edit Mode Styles */
+.edit-form-group {
+    width: 100%;
+}
+
+.edit-input,
+.edit-input-large,
+.edit-textarea {
+    width: 100%;
+    padding: 0.8rem;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+    background-color: var(--bg-secondary);
+    color: var(--text-primary);
+    font-family: inherit;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.edit-input:focus,
+.edit-input-large:focus,
+.edit-textarea:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 2px rgba(var(--primary-rgb), 0.2);
+}
+
+.edit-input-large {
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+}
+
+.edit-textarea {
+    resize: vertical;
+    line-height: 1.6;
+}
+
+.skills-edit {
+    width: 100%;
+}
