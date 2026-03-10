@@ -6,36 +6,22 @@ import Chat from './Chat';
 import Features from './Features';
 import About from './About';
 import Profile from './Profile';
-import { getToken, clearToken } from './auth';
+import { auth } from './firebase';
+import { onAuthStateChanged } from 'firebase/auth';
 import './App.css';
 
-// Validates token with the server; clears storage if invalid/expired
+/**
+ * Guards a route so only authenticated Firebase users can access it.
+ * Shows a loading screen while Firebase is initialising.
+ */
 const ProtectedRoute = ({ children }) => {
   const [status, setStatus] = useState('checking'); // 'checking' | 'ok' | 'fail'
 
   useEffect(() => {
-    const token = getToken();
-    if (!token) {
-      setStatus('fail');
-      return;
-    }
-
-    fetch('/api/user', {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((res) => {
-        if (res.ok) {
-          setStatus('ok');
-        } else {
-          clearToken();
-          setStatus('fail');
-        }
-      })
-      .catch(() => {
-        // Network/server unreachable — clear session
-        clearToken();
-        setStatus('fail');
-      });
+    const unsub = onAuthStateChanged(auth, (user) => {
+      setStatus(user ? 'ok' : 'fail');
+    });
+    return () => unsub();
   }, []);
 
   if (status === 'checking') {
@@ -52,10 +38,29 @@ const ProtectedRoute = ({ children }) => {
   return status === 'ok' ? children : <Navigate to="/login" replace />;
 };
 
-// Redirect to /home if already logged in
+/** Redirect to /home if the user is already signed in. */
 const AuthRoute = ({ children }) => {
-  const token = getToken();
-  return token ? <Navigate to="/home" replace /> : children;
+  const [status, setStatus] = useState('checking');
+
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (user) => {
+      setStatus(user ? 'ok' : 'fail');
+    });
+    return () => unsub();
+  }, []);
+
+  if (status === 'checking') {
+    return (
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        height: '100vh', background: '#0f172a', color: '#94a3b8', fontSize: '1rem'
+      }}>
+        Loading…
+      </div>
+    );
+  }
+
+  return status === 'ok' ? <Navigate to="/home" replace /> : children;
 };
 
 function App() {

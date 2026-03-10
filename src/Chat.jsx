@@ -1,21 +1,38 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { MessageSquare, Send, User, LogOut, ArrowLeft, Hash, Search, X, Star } from 'lucide-react';
-import { getToken, clearToken } from './auth';
+import { auth, db } from './firebase';
+import { onAuthStateChanged } from 'firebase/auth';
+import {
+    collection,
+    query,
+    where,
+    onSnapshot,
+    addDoc,
+    serverTimestamp,
+    getDocs,
+    limit,
+} from 'firebase/firestore';
+import { clearSession } from './auth';
 import './Chat.css';
 
-const API_URL = '/api';
+/** Returns a stable conversation ID from two UIDs (always same regardless of who sends first) */
+const convId = (uid1, uid2) => [uid1, uid2].sort().join('_');
 
 const Chat = () => {
     const navigate = useNavigate();
     const location = useLocation();
-    const [currentUser, setCurrentUser] = useState({ email: '', name: '' });
+
+    const [fireUser, setFireUser] = useState(null); // Firebase Auth user
+    const [currentUser, setCurrentUser] = useState({ email: '', name: '', uid: '' });
     const [messages, setMessages] = useState([]);
     const [input, setInput] = useState('');
     const [sending, setSending] = useState(false);
-    const [receiver, setReceiver] = useState(null);
+    const [receiver, setReceiver] = useState(null); // { email, name, chat_id, uid }
     const messagesEndRef = useRef(null);
     const inputRef = useRef(null);
+    // Tracks whether we've already run the one-time receiver restoration
+    const initializedRef = useRef(false);
 
     // Modal state
     const [showModal, setShowModal] = useState(false);
@@ -30,7 +47,6 @@ const Chat = () => {
         catch { return []; }
     });
 
-    // Toggle star for a conversation email
     const toggleStar = (e, email) => {
         e.stopPropagation();
         setStarred(prev => {
@@ -42,100 +58,143 @@ const Chat = () => {
         });
     };
 
-    // Open a conversation
     const openConv = (conv) => {
         setReceiver(conv);
         localStorage.setItem('last_receiver', JSON.stringify(conv));
         setShowModal(false);
     };
 
-    // Get current user + restore last receiver
+    // ── Auth guard ────────────────────────────────────────────────────────────
     useEffect(() => {
-        const token = getToken();
-        if (!token) { navigate('/login'); return; }
-        try {
-            const payload = JSON.parse(atob(token));
-            setCurrentUser({ email: payload.email, name: payload.email.split('@')[0] });
-        } catch { navigate('/login'); return; }
+        const unsub = onAuthStateChanged(auth, (user) => {
+            if (!user) { navigate('/login'); return; }
+            setFireUser(user);
+            setCurrentUser({
+                email: user.email,
+                name: user.displayName || user.email.split('@')[0],
+                uid: user.uid,
+            });
+        });
+        return () => unsub();
+    }, [navigate]);
+
+    // ── Restore last receiver / location state (runs ONCE after auth resolves) ──
+    useEffect(() => {
+        if (!fireUser) return;
+        // Guard: only initialise once. Firebase can re-fire onAuthStateChanged
+        // with a refreshed user object, which would reset the receiver state.
+        if (initializedRef.current) return;
+        initializedRef.current = true;
 
         if (location.state?.receiver) {
             setReceiver(location.state.receiver);
             setShowModal(false);
             return;
         }
-
-        // openInbox=true → skip modal, show conversations sidebar
         if (location.state?.openInbox) {
             setShowModal(false);
             return;
         }
-
         try {
             const saved = localStorage.getItem('last_receiver');
             if (saved) { setReceiver(JSON.parse(saved)); setShowModal(false); return; }
         } catch { /* ignore */ }
         setShowModal(true);
-    }, [navigate, location.state]);
+    }, [fireUser, location.state]);
 
-    // Scroll to bottom
+    // ── Scroll to bottom ──────────────────────────────────────────────────────
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages]);
 
-    // Fetch conversations
-    const fetchConversations = async () => {
-        const token = getToken();
-        if (!token) return;
-        try {
-            const res = await fetch(`${API_URL}/conversations`, { headers: { Authorization: `Bearer ${token}` } });
-            if (!res.ok) return;
-            const data = await res.json();
-            setConversations(data.conversations || []);
-        } catch { /* silent */ }
-    };
-
+    // ── Realtime: conversations (unique partners via participants array) ─────────
     useEffect(() => {
-        fetchConversations();
-        const iv = setInterval(fetchConversations, 5000);
-        return () => clearInterval(iv);
-    }, []);
+        if (!fireUser) return;
 
-    // Fetch DMs
-    const fetchMessages = async (target) => {
-        if (!target) return;
-        const token = getToken();
-        try {
-            const res = await fetch(`${API_URL}/messages?with=${encodeURIComponent(target.email)}`, {
-                headers: { Authorization: `Bearer ${token}` },
+        // 'participants' is an array stored on every message — no or() needed
+        const q = query(
+            collection(db, 'messages'),
+            where('participants', 'array-contains', fireUser.uid)
+        );
+
+        const unsub = onSnapshot(q, (snap) => {
+            const partnerMap = new Map();
+            snap.forEach(d => {
+                const data = d.data();
+                const isSender = data.sender_uid === fireUser.uid;
+                const partnerUid = isSender ? data.receiver_uid : data.sender_uid;
+                const partnerEmail = isSender ? data.receiver_email : data.sender_email;
+                const partnerName = isSender ? data.receiver_name : data.sender_name;
+                const partnerChatId = isSender ? data.receiver_chat_id : data.sender_chat_id;
+                const ts = data.created_at?.seconds || 0;
+
+                if (!partnerMap.has(partnerUid) || ts > (partnerMap.get(partnerUid).last_msg || 0)) {
+                    partnerMap.set(partnerUid, {
+                        uid: partnerUid,
+                        email: partnerEmail,
+                        name: partnerName,
+                        chat_id: partnerChatId,
+                        last_msg: ts,
+                    });
+                }
             });
-            if (!res.ok) return;
-            const data = await res.json();
-            setMessages(data.messages || []);
-        } catch { /* silent */ }
-    };
+            const sorted = [...partnerMap.values()].sort((a, b) => b.last_msg - a.last_msg);
+            setConversations(sorted);
+        });
 
+        return () => unsub();
+    }, [fireUser]);
+
+    // ── Realtime: messages with current receiver ──────────────────────────────
     useEffect(() => {
-        if (!receiver) return;
-        fetchMessages(receiver);
-        const iv = setInterval(() => fetchMessages(receiver), 2000);
-        return () => clearInterval(iv);
-    }, [receiver]);
+        if (!fireUser || !receiver) return;
 
-    // Lookup by Chat ID
+        // No orderBy in the query — serverTimestamp() is null on the client
+        // until the server confirms it, so orderBy would skip pending messages.
+        // We sort client-side instead so new messages appear the instant they
+        // are written, even before the server acknowledges them.
+        const cid = convId(fireUser.uid, receiver.uid);
+        const q = query(
+            collection(db, 'messages'),
+            where('conversation_id', '==', cid),
+            limit(200)
+        );
+
+        const unsub = onSnapshot(q, { includeMetadataChanges: true }, (snap) => {
+            const msgs = snap.docs
+                .map(d => ({ id: d.id, ...d.data() }))
+                // Sort by created_at; pending writes have null — put them last so
+                // they still show immediately at the bottom.
+                .sort((a, b) => {
+                    const ta = a.created_at?.seconds ?? Infinity;
+                    const tb = b.created_at?.seconds ?? Infinity;
+                    return ta - tb;
+                });
+            setMessages(msgs);
+        }, (err) => {
+            console.error('Messages listener error:', err);
+        });
+
+        return () => unsub();
+    }, [fireUser, receiver]);
+
+    // ── Lookup user by Chat ID ────────────────────────────────────────────────
     const handleLookup = async (e) => {
         e.preventDefault();
         setLookupError('');
         setLooking(true);
-        const token = getToken();
         try {
-            const res = await fetch(`${API_URL}/user-by-chatid?chat_id=${chatIdInput.trim().toUpperCase()}`, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'User not found');
-            const payload = JSON.parse(atob(token));
-            if (data.email === payload.email) throw new Error("That's your own Chat ID!");
-            openConv(data);
+            const q = query(
+                collection(db, 'users'),
+                where('chat_id', '==', chatIdInput.trim().toUpperCase()),
+                limit(1)
+            );
+            const snap = await getDocs(q);
+            if (snap.empty) throw new Error('No user found with that Chat ID.');
+            const data = snap.docs[0].data();
+            const uid = snap.docs[0].id;
+            if (uid === fireUser.uid) throw new Error("That's your own Chat ID!");
+            openConv({ uid, email: data.email, name: data.name, chat_id: data.chat_id });
         } catch (err) {
             setLookupError(err.message);
         } finally {
@@ -143,30 +202,45 @@ const Chat = () => {
         }
     };
 
-    // Send message
+    // ── Send message ──────────────────────────────────────────────────────────
     const handleSend = async (e) => {
         e.preventDefault();
         if (!input.trim() || sending || !receiver) return;
         setSending(true);
-        const token = getToken();
         try {
-            await fetch(`${API_URL}/messages`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                body: JSON.stringify({ content: input.trim(), receiver_email: receiver.email }),
+            await addDoc(collection(db, 'messages'), {
+                // conversation_id lets us query with a single where() + orderBy()
+                conversation_id: convId(fireUser.uid, receiver.uid),
+                // participants array lets us query all conversations for a user
+                participants: [fireUser.uid, receiver.uid],
+                sender_uid: fireUser.uid,
+                sender_email: currentUser.email,
+                sender_name: currentUser.name,
+                sender_chat_id: null,
+                receiver_uid: receiver.uid,
+                receiver_email: receiver.email,
+                receiver_name: receiver.name,
+                receiver_chat_id: receiver.chat_id,
+                content: input.trim(),
+                created_at: serverTimestamp(),
+                is_read: false,
             });
             setInput('');
-            await fetchMessages(receiver);
-        } catch { /* silent */ } finally {
+        } catch (err) {
+            console.error('Send error:', err);
+        } finally {
             setSending(false);
             inputRef.current?.focus();
         }
     };
 
-    const handleLogout = () => { clearToken(); navigate('/login'); };
-    const formatTime = (ts) => new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const handleLogout = async () => { await clearSession(); navigate('/login'); };
+    const formatTime = (ts) => {
+        if (!ts) return '';
+        const d = ts.seconds ? new Date(ts.seconds * 1000) : new Date(ts);
+        return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    };
 
-    // Sort: starred first, then rest
     const starredConvs = conversations.filter(c => starred.includes(c.email));
     const otherConvs = conversations.filter(c => !starred.includes(c.email));
 
@@ -221,7 +295,7 @@ const Chat = () => {
                             </div>
                             {lookupError && <p className="modal-error">{lookupError}</p>}
                             <button type="submit" className="modal-btn" disabled={looking || !chatIdInput.trim()}>
-                                {looking ? 'Looking up...' : <><Search size={16} /> Find & Chat</>}
+                                {looking ? 'Looking up...' : <><Search size={16} /> Find &amp; Chat</>}
                             </button>
                         </form>
                         <button className="modal-back" onClick={() => navigate('/home')}>
@@ -290,7 +364,6 @@ const Chat = () => {
                                     <h2>{receiver.name}</h2>
                                     <p>Chat ID: {receiver.chat_id}</p>
                                 </div>
-                                {/* Star button in header */}
                                 <button
                                     title={starred.includes(receiver.email) ? 'Unstar conversation' : 'Star conversation'}
                                     onClick={(e) => toggleStar(e, receiver.email)}
@@ -333,8 +406,8 @@ const Chat = () => {
                         </div>
                     )}
                     {messages.map((msg, i) => {
-                        const isMe = msg.sender_email === currentUser.email;
-                        const showAvatar = i === 0 || messages[i - 1]?.sender_email !== msg.sender_email;
+                        const isMe = msg.sender_uid === fireUser?.uid;
+                        const showAvatar = i === 0 || messages[i - 1]?.sender_uid !== msg.sender_uid;
                         return (
                             <div key={msg.id} className={`message-row ${isMe ? 'me' : 'them'}`}>
                                 {!isMe && (
