@@ -1,0 +1,113 @@
+.features-container {
+    min-height: 100vh;
+    background: linear-gradient(135deg, #1a202c 0%, #2d3748 100%);
+    color: white;
+    font-family: 'Inter', sans-serif;
+    padding-bottom: 4rem;
+}
+
+.features-header {
+    text-align: center;
+    padding: 6rem 2rem 4rem;
+}
+
+.features-header h1 {
+    font-size: 3.5rem;
+    margin-bottom: 1rem;
+    font-weight: 800;
+}
+
+.features-header h1 span {
+    color: #4299e1;
+}
+
+.features-header p {
+    font-size: 1.25rem;
+    color: #a0aec0;
+    max-width: 600px;
+    margin: 0 auto;
+}
+
+.features-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 2rem;
+    padding: 0 4rem;
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+.feature-card {
+    background: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 20px;
+    padding: 2rem;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.feature-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    border-color: rgba(66, 153, 225, 0.5);
+}
+
+.feature-icon-wrapper {
+    background: rgba(66, 153, 225, 0.1);
+    width: 60px;
+    height: 60px;
+    border-radius: 15px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 1.5rem;
+    color: #4299e1;
+}
+
+.feature-card h3 {
+    font-size: 1.5rem;
+    margin-bottom: 1.5rem;
+    color: white;
+}
+
+.feature-card ul {
+    list-style: none;
+    padding: 0;
+}
+
+.feature-card li {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+    color: #cbd5e0;
+    font-size: 0.95rem;
+}
+
+.check-icon {
+    color: #48bb78;
+    flex-shrink: 0;
+}
+
+.features-cta {
+    text-align: center;
+    margin-top: 5rem;
+    padding: 4rem 2rem;
+    background: linear-gradient(rgba(26, 32, 44, 0), rgba(0, 0, 0, 0.2));
+}
+
+.features-cta h2 {
+    font-size: 2.5rem;
+    margin-bottom: 2rem;
+}
+
+@media (max-width: 768px) {
+    .features-header h1 {
+        font-size: 2.5rem;
+    }
+
+    .features-grid {
+        grid-template-columns: 1fr;
+        padding: 0 1.5rem;
+    }
+}
