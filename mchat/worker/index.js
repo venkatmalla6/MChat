@@ -195,13 +195,39 @@ export default {
                     email: user.email,
                     name: user.name || user.email.split('@')[0],
                     chat_id: user.chat_id || 'N/A',
-                    avatar_url: user.avatar_url,
+                    avatar_url: user.avatar_url || null,
                     joined: user.created_at || new Date().toISOString()
                 }), { status: 200, headers: corsHeaders });
             } catch (e) {
                 return new Response(JSON.stringify({ error: "Invalid token" }), { status: 401, headers: corsHeaders });
             }
         }
+
+        // ─── UPLOAD AVATAR ────────────────────────────────────────────────────
+        if (url.pathname === "/api/upload-avatar" && method === "POST") {
+            const authHeader = request.headers.get("Authorization");
+            if (!authHeader || !authHeader.startsWith("Bearer ")) {
+                return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
+            }
+            const token = authHeader.split(" ")[1];
+            try {
+                const payload = JSON.parse(atob(token));
+                const { avatar_url } = await request.json();
+                if (!avatar_url || !avatar_url.startsWith('data:image/')) {
+                    return new Response(JSON.stringify({ error: "Invalid image data" }), { status: 400, headers: corsHeaders });
+                }
+                // Limit to ~200KB base64
+                if (avatar_url.length > 280000) {
+                    return new Response(JSON.stringify({ error: "Image too large. Please use a smaller image." }), { status: 400, headers: corsHeaders });
+                }
+                await env.DB.prepare("UPDATE users SET avatar_url = ? WHERE id = ?")
+                    .bind(avatar_url, payload.id).run();
+                return new Response(JSON.stringify({ message: "Avatar updated", avatar_url }), { status: 200, headers: corsHeaders });
+            } catch (e) {
+                return new Response(JSON.stringify({ error: "Invalid token or upload failed" }), { status: 401, headers: corsHeaders });
+            }
+        }
+
 
         // ─── LOOKUP USER BY CHAT ID ───────────────────────────────────────────
         if (url.pathname === "/api/user-by-chatid" && method === "GET") {
@@ -233,14 +259,17 @@ export default {
                 return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
             }
             try {
+                // Ensure is_read column exists (safe to run repeatedly)
+                await env.DB.prepare(
+                    `ALTER TABLE messages ADD COLUMN is_read INTEGER DEFAULT 0`
+                ).run().catch(() => { }); // ignore error if column already exists
+
                 const token = authHeader.split(" ")[1];
                 const payload = JSON.parse(atob(token));
                 const myEmail = payload.email;
-                // Count messages received by this user in the last 24 hours
-                const since = Date.now() - 24 * 60 * 60 * 1000;
                 const result = await env.DB.prepare(
-                    `SELECT COUNT(*) as count FROM messages WHERE receiver_email = ? AND created_at > ?`
-                ).bind(myEmail, since).first();
+                    `SELECT COUNT(*) as count FROM messages WHERE receiver_email = ? AND is_read = 0`
+                ).bind(myEmail).first();
                 return new Response(JSON.stringify({ count: result?.count || 0 }), { status: 200, headers: corsHeaders });
             } catch (e) {
                 return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders });
@@ -248,7 +277,6 @@ export default {
         }
 
         // ─── GET MESSAGES (DM) ───────────────────────────────────────────────────
-
         if (url.pathname === "/api/messages" && method === "GET") {
             const authHeader = request.headers.get("Authorization");
             if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -269,6 +297,12 @@ export default {
                         OR (sender_email = ? AND receiver_email = ?)
                      ORDER BY created_at ASC LIMIT 100`
                 ).bind(myEmail, receiverEmail, receiverEmail, myEmail).all();
+
+                // Mark all messages FROM the other person TO me as read
+                await env.DB.prepare(
+                    `UPDATE messages SET is_read = 1 WHERE sender_email = ? AND receiver_email = ? AND is_read = 0`
+                ).bind(receiverEmail, myEmail).run().catch(() => { });
+
                 return new Response(JSON.stringify({ messages: results }), { status: 200, headers: corsHeaders });
             } catch (e) {
                 return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders });
@@ -302,6 +336,44 @@ export default {
             }
         }
 
+        // ─── GET CONVERSATIONS (all unique partners) ───────────────────────────
+        if (url.pathname === "/api/conversations" && method === "GET") {
+            const authHeader = request.headers.get("Authorization");
+            if (!authHeader || !authHeader.startsWith("Bearer ")) {
+                return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
+            }
+            try {
+                const token = authHeader.split(" ")[1];
+                const payload = JSON.parse(atob(token));
+                const myEmail = payload.email;
+
+                // Get all unique partners (sent or received)
+                const { results } = await env.DB.prepare(`
+                    SELECT DISTINCT
+                        CASE WHEN sender_email = ? THEN receiver_email ELSE sender_email END AS partner_email,
+                        MAX(created_at) AS last_msg
+                    FROM messages
+                    WHERE sender_email = ? OR receiver_email = ?
+                    GROUP BY partner_email
+                    ORDER BY last_msg DESC
+                `).bind(myEmail, myEmail, myEmail).all();
+
+                // Fetch user details for each partner
+                const partners = [];
+                for (const row of results) {
+                    const user = await env.DB.prepare(
+                        "SELECT email, name, chat_id FROM users WHERE email = ?"
+                    ).bind(row.partner_email).first();
+                    if (user) partners.push({ ...user, last_msg: row.last_msg });
+                }
+
+                return new Response(JSON.stringify({ conversations: partners }), { status: 200, headers: corsHeaders });
+            } catch (e) {
+                return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders });
+            }
+        }
+
         return new Response("Not Found", { status: 404, headers: corsHeaders });
+
     }
 };

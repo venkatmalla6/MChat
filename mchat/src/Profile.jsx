@@ -1,100 +1,151 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { User, Mail, Calendar, ArrowLeft, LogOut, Hash } from 'lucide-react';
+import { User, Mail, Calendar, ArrowLeft, LogOut, Hash, Camera } from 'lucide-react';
+import { auth, db, storage } from './firebase';
+import { onAuthStateChanged } from 'firebase/auth';
+import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { clearSession } from './auth';
 import './Profile.css';
 
 const Profile = () => {
     const navigate = useNavigate();
-    const [user, setUser] = useState(null);
+    const [user, setUser] = useState(null);         // Firestore user doc data
+    const [fireUser, setFireUser] = useState(null); // Firebase Auth user
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
+    const [avatarUrl, setAvatarUrl] = useState(null);
+    const [uploading, setUploading] = useState(false);
+    const [uploadMsg, setUploadMsg] = useState('');
+    const fileInputRef = useRef(null);
 
     useEffect(() => {
-        const fetchProfile = async () => {
-            const token = localStorage.getItem('token');
-            if (!token) {
+        const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
+            if (!firebaseUser) {
                 navigate('/login');
                 return;
             }
-
+            setFireUser(firebaseUser);
             try {
-                const API_URL = '/api';
-                const response = await fetch(`${API_URL}/user`, {
-                    headers: {
-                        'Authorization': `Bearer ${token}`
-                    }
-                });
-
-                if (response.status === 401 || response.status === 403) {
-                    // Token is invalid or expired — clear and redirect
-                    localStorage.removeItem('token');
-                    navigate('/login');
-                    return;
-                }
-
-                if (!response.ok) {
-                    throw new Error('Server error. Please try again later.');
-                }
-
-                const data = await response.json();
-                setUser(data);
-            } catch (err) {
-                // Network error (e.g. worker not running or no internet)
-                if (err.name === 'TypeError' && err.message === 'Failed to fetch') {
-                    setError('Cannot connect to the server. Make sure the backend is running.');
+                const snap = await getDoc(doc(db, 'users', firebaseUser.uid));
+                if (snap.exists()) {
+                    const data = snap.data();
+                    setUser(data);
+                    setAvatarUrl(data.avatar_url || null);
                 } else {
-                    setError(err.message);
+                    setError('User profile not found in database.');
                 }
+            } catch (err) {
+                setError(err.message);
             } finally {
                 setLoading(false);
             }
-        };
-
-        fetchProfile();
+        });
+        return () => unsub();
     }, [navigate]);
 
-    const handleLogout = () => {
-        localStorage.removeItem('token');
+    const handleAvatarChange = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        if (!file.type.startsWith('image/')) { setUploadMsg('Please select an image file.'); return; }
+
+        setUploading(true);
+        setUploadMsg('');
+        try {
+            // Upload to Firebase Storage: avatars/{uid}/avatar
+            const storageRef = ref(storage, `avatars/${fireUser.uid}/avatar`);
+            await uploadBytes(storageRef, file);
+            const downloadURL = await getDownloadURL(storageRef);
+
+            // Update Firestore user doc
+            await updateDoc(doc(db, 'users', fireUser.uid), { avatar_url: downloadURL });
+            setAvatarUrl(downloadURL);
+            setUploadMsg('Profile picture updated! ✅');
+        } catch (err) {
+            setUploadMsg(err.message);
+        } finally {
+            setUploading(false);
+            if (fileInputRef.current) fileInputRef.current.value = '';
+        }
+    };
+
+    const handleLogout = async () => {
+        await clearSession();
         navigate('/login');
     };
 
-    if (loading) {
-        return (
-            <div className="profile-container loading">
-                <div className="spinner"></div>
-                <p>Loading profile...</p>
-            </div>
-        );
-    }
+    if (loading) return (
+        <div className="profile-container loading">
+            <div className="spinner"></div>
+            <p>Loading profile...</p>
+        </div>
+    );
 
-    if (error) {
-        return (
-            <div className="profile-container error">
-                <div className="error-card">
-                    <p>{error}</p>
-                    <button onClick={() => navigate('/login')}>Go to Login</button>
-                </div>
+    if (error) return (
+        <div className="profile-container error">
+            <div className="error-card">
+                <p>{error}</p>
+                <button onClick={() => navigate('/login')}>Go to Login</button>
             </div>
-        );
-    }
+        </div>
+    );
+
+    const displayName = user?.name || fireUser?.email?.split('@')[0] || 'User';
+    const joinedDate = user?.created_at?.toDate
+        ? user.created_at.toDate().toLocaleDateString()
+        : (fireUser?.metadata?.creationTime
+            ? new Date(fireUser.metadata.creationTime).toLocaleDateString()
+            : 'N/A');
 
     return (
         <div className="profile-container">
             <nav className="navbar">
-                <Link to="/" className="back-link">
+                <Link to="/home" className="back-link">
                     <ArrowLeft size={20} /> Back to Home
                 </Link>
                 <h1 className="nav-title">My Profile</h1>
-                <div style={{ width: '100px' }}></div> {/* Spacer */}
+                <div style={{ width: '120px' }} />
             </nav>
 
             <div className="profile-content">
                 <div className="profile-card">
                     <div className="profile-header">
-                        <div className="avatar-large">
-                            <User size={64} color="white" />
+
+                        {/* ── Clickable Avatar ── */}
+                        <div className="avatar-wrapper" onClick={() => fileInputRef.current?.click()}>
+                            <div className="avatar-large">
+                                {avatarUrl
+                                    ? <img src={avatarUrl} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
+                                    : <User size={64} color="white" />
+                                }
+                            </div>
+                            <div className="avatar-camera-overlay">
+                                {uploading
+                                    ? <div className="avatar-spin" />
+                                    : <Camera size={22} color="white" />
+                                }
+                            </div>
+                            <input
+                                ref={fileInputRef}
+                                type="file"
+                                accept="image/*"
+                                style={{ display: 'none' }}
+                                onChange={handleAvatarChange}
+                            />
                         </div>
-                        <h2>{user.name || user.email.split('@')[0]}</h2>
+
+                        {uploadMsg && (
+                            <p style={{
+                                fontSize: '0.82rem',
+                                color: uploadMsg.includes('✅') ? '#68d391' : '#fc8181',
+                                margin: 0,
+                                textAlign: 'center',
+                            }}>
+                                {uploadMsg}
+                            </p>
+                        )}
+
+                        <h2>{displayName}</h2>
                         <span className="badge">Member</span>
                     </div>
 
@@ -103,28 +154,28 @@ const Profile = () => {
                             <User size={20} className="detail-icon" />
                             <div className="detail-text">
                                 <label>Full Name</label>
-                                <p>{user.name || user.email.split('@')[0]}</p>
+                                <p>{displayName}</p>
                             </div>
                         </div>
                         <div className="detail-item">
                             <Mail size={20} className="detail-icon" />
                             <div className="detail-text">
                                 <label>Email Address</label>
-                                <p>{user.email}</p>
+                                <p>{user?.email || fireUser?.email}</p>
                             </div>
                         </div>
                         <div className="detail-item">
                             <Calendar size={20} className="detail-icon" />
                             <div className="detail-text">
                                 <label>Joined On</label>
-                                <p>{new Date(user.joined).toLocaleDateString()}</p>
+                                <p>{joinedDate}</p>
                             </div>
                         </div>
                         <div className="detail-item chat-id-item">
                             <Hash size={20} className="detail-icon" />
                             <div className="detail-text">
                                 <label>Your Chat ID <span style={{ color: '#4a5568', fontWeight: 400 }}>(share this to receive messages)</span></label>
-                                <p className="mono chat-id-display">{user.chat_id || 'N/A'}</p>
+                                <p className="mono chat-id-display">{user?.chat_id || 'N/A'}</p>
                             </div>
                         </div>
                     </div>

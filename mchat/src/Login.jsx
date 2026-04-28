@@ -1,9 +1,19 @@
 import React, { useState } from 'react';
-import { Mail, Lock, Cloud, Eye, EyeOff, MessageSquare, User, KeyRound, ShieldCheck } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, MessageSquare, User, Cloud } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
+import { auth, db } from './firebase';
+import {
+    createUserWithEmailAndPassword,
+    signInWithEmailAndPassword,
+    sendPasswordResetEmail,
+    updateProfile,
+} from 'firebase/auth';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { applyPersistence } from './auth';
 import './Login.css';
 
-const API_URL = '/api';
+/** Generate a random Chat ID like MCH4F2A */
+const genChatId = () => 'MCH' + Math.random().toString(36).substr(2, 4).toUpperCase();
 
 const Login = () => {
     const [showPassword, setShowPassword] = useState(false);
@@ -11,105 +21,99 @@ const Login = () => {
     const [name, setName] = useState('');
     const [password, setPassword] = useState('');
     const [isRegistering, setIsRegistering] = useState(false);
+    const [rememberMe, setRememberMe] = useState(false);
     const [error, setError] = useState('');
     const [successMsg, setSuccessMsg] = useState('');
-    const navigate = useNavigate();
-
-    // Forgot password: 'idle' | 'sent' | 'reset'
-    const [forgotStep, setForgotStep] = useState('idle');
-    const [otp, setOtp] = useState('');
-    const [newPassword, setNewPassword] = useState('');
     const [loading, setLoading] = useState(false);
+
+    // Forgot password
+    const [forgotStep, setForgotStep] = useState('idle'); // 'idle' | 'sending'
+    const navigate = useNavigate();
 
     const clearMessages = () => { setError(''); setSuccessMsg(''); };
 
-    // ── Step 1: Send OTP ────────────────────────────────────────────────────
-    const handleSendOTP = async (e) => {
-        e.preventDefault();
-        clearMessages();
-        setLoading(true);
-        try {
-            const res = await fetch(`${API_URL}/forgot-password`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email }),
-            });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'Failed to send OTP');
-            setSuccessMsg('OTP sent! Check your email inbox.');
-            setForgotStep('sent');
-        } catch (err) {
-            setError(err.message);
-        } finally {
-            setLoading(false);
-        }
+    // ── Register ────────────────────────────────────────────────────────────
+    const handleRegister = async () => {
+        await applyPersistence(rememberMe);
+        const cred = await createUserWithEmailAndPassword(auth, email, password);
+        const displayName = name || email.split('@')[0];
+        await updateProfile(cred.user, { displayName });
+
+        const chatId = genChatId();
+        await setDoc(doc(db, 'users', cred.user.uid), {
+            email,
+            name: displayName,
+            chat_id: chatId,
+            avatar_url: null,
+            created_at: serverTimestamp(),
+        });
+
+        setSuccessMsg('Registration successful! Please sign in.');
+        setIsRegistering(false);
+        setEmail(''); setPassword(''); setName('');
     };
 
-    // ── Step 2: Verify OTP + Reset Password ────────────────────────────────
-    const handleVerifyOTP = async (e) => {
-        e.preventDefault();
-        clearMessages();
-        setLoading(true);
-        try {
-            const res = await fetch(`${API_URL}/verify-otp`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email, otp, newPassword }),
-            });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'Verification failed');
-            setSuccessMsg('Password reset successful! You can now sign in.');
-            setForgotStep('idle');
-            setIsRegistering(false);
-            setEmail('');
-            setOtp('');
-            setNewPassword('');
-        } catch (err) {
-            setError(err.message);
-        } finally {
-            setLoading(false);
-        }
+    // ── Login ───────────────────────────────────────────────────────────────
+    const handleLogin = async () => {
+        await applyPersistence(rememberMe);
+        await signInWithEmailAndPassword(auth, email, password);
+        navigate('/home');
     };
 
-    // ── Login / Register ────────────────────────────────────────────────────
+    // ── Auth dispatcher ─────────────────────────────────────────────────────
     const handleAuth = async (e) => {
         e.preventDefault();
         clearMessages();
         setLoading(true);
-        const endpoint = isRegistering ? '/register' : '/login';
         try {
-            const res = await fetch(`${API_URL}${endpoint}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email, password, name }),
-            });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'Authentication failed');
             if (isRegistering) {
-                setSuccessMsg('Registration successful! Please sign in.');
-                setIsRegistering(false);
+                await handleRegister();
             } else {
-                localStorage.setItem('token', data.token);
-                localStorage.setItem('chat_id', data.chat_id || '');
-                localStorage.setItem('user_name', data.user?.name || '');
-                navigate('/home');
+                await handleLogin();
             }
         } catch (err) {
-            setError(err.message);
+            const msg = {
+                'auth/email-already-in-use': 'This email is already registered. Please sign in instead.',
+                'auth/user-not-found': 'No account found with that email.',
+                'auth/wrong-password': 'Incorrect password. Please try again.',
+                'auth/invalid-credential': 'Invalid email or password.',
+                'auth/weak-password': 'Password must be at least 6 characters.',
+                'auth/invalid-email': 'Please enter a valid email address.',
+                'auth/network-request-failed': 'Network error. Check your connection.',
+            }[err.code] || err.message;
+            setError(msg);
         } finally {
             setLoading(false);
         }
     };
 
-    // ── Card header text ────────────────────────────────────────────────────
+    // ── Forgot Password ─────────────────────────────────────────────────────
+    const handleForgotPassword = async (e) => {
+        e.preventDefault();
+        clearMessages();
+        setLoading(true);
+        try {
+            await sendPasswordResetEmail(auth, email);
+            setSuccessMsg('Password reset email sent! Check your inbox.');
+            setForgotStep('idle');
+        } catch (err) {
+            const msg = {
+                'auth/user-not-found': 'No account found with that email.',
+                'auth/invalid-email': 'Please enter a valid email address.',
+            }[err.code] || err.message;
+            setError(msg);
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const cardTitle = forgotStep === 'idle'
         ? (isRegistering ? 'Create Account' : 'Sign In')
-        : forgotStep === 'sent' ? 'Verify OTP' : 'Sign In';
+        : 'Reset Password';
 
-    const cardSubtitle = forgotStep === 'sent'
-        ? `We sent a 6-digit OTP to ${email}`
-        : forgotStep !== 'idle' ? ''
-            : isRegistering ? 'Join us today!' : 'Welcome back! Please enter your details.';
+    const cardSubtitle = forgotStep !== 'idle'
+        ? 'Enter your email and we\'ll send a reset link.'
+        : isRegistering ? 'Join us today!' : 'Welcome back! Please enter your details.';
 
     return (
         <div className="login-container">
@@ -122,7 +126,7 @@ const Login = () => {
                     <span className="logo-text">MChat</span>
                 </div>
                 <div className="nav-links">
-                    <Link to="/">Home</Link>
+                    <Link to="/home">Home</Link>
                     <Link to="/features">Features</Link>
                     <Link to="/about">About</Link>
                     {forgotStep === 'idle' && (
@@ -157,7 +161,7 @@ const Login = () => {
                         <p>{cardSubtitle}</p>
                     </div>
 
-                    {/* ── STEP 1: Enter email to get OTP ── */}
+                    {/* ── Sign In / Register ── */}
                     {forgotStep === 'idle' && (
                         <form className="login-form" onSubmit={handleAuth}>
                             {error && <div className="error-message" style={{ color: '#feb2b2', fontSize: '0.9rem' }}>{error}</div>}
@@ -189,10 +193,20 @@ const Login = () => {
 
                             {!isRegistering && (
                                 <div className="form-footer">
-                                    <button type="button" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#63b3ed', fontSize: '0.85rem', padding: 0 }}
+                                    <button type="button"
+                                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#63b3ed', fontSize: '0.85rem', padding: 0 }}
                                         onClick={() => { setForgotStep('sending'); clearMessages(); }}>
                                         Forgot password?
                                     </button>
+                                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', color: '#a0aec0', fontSize: '0.85rem', userSelect: 'none' }}>
+                                        <input
+                                            type="checkbox"
+                                            checked={rememberMe}
+                                            onChange={e => setRememberMe(e.target.checked)}
+                                            style={{ accentColor: '#4299e1', width: '15px', height: '15px', cursor: 'pointer' }}
+                                        />
+                                        Remember me
+                                    </label>
                                 </div>
                             )}
 
@@ -212,12 +226,13 @@ const Login = () => {
                         </form>
                     )}
 
-                    {/* ── STEP 1: Enter email for OTP ── */}
+                    {/* ── Forgot Password ── */}
                     {forgotStep === 'sending' && (
-                        <form className="login-form" onSubmit={handleSendOTP}>
+                        <form className="login-form" onSubmit={handleForgotPassword}>
                             {error && <div className="error-message" style={{ color: '#feb2b2', fontSize: '0.9rem' }}>{error}</div>}
+                            {successMsg && <div style={{ color: '#9ae6b4', fontSize: '0.9rem', marginBottom: '0.5rem' }}>{successMsg}</div>}
                             <p style={{ color: '#a0aec0', fontSize: '0.9rem', marginBottom: '1rem' }}>
-                                Enter your registered email and we'll send you a 6-digit OTP.
+                                Enter your registered email and we'll send you a password reset link.
                             </p>
                             <div className="input-group">
                                 <Mail className="input-icon" size={20} />
@@ -225,40 +240,11 @@ const Login = () => {
                                     onChange={(e) => setEmail(e.target.value)} required />
                             </div>
                             <button type="submit" className="signin-btn" disabled={loading}>
-                                {loading ? 'Sending OTP...' : 'Send OTP'}
+                                {loading ? 'Sending...' : 'Send Reset Link'}
                             </button>
                             <button type="button" onClick={() => { setForgotStep('idle'); clearMessages(); }}
                                 style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#a0aec0', fontSize: '0.85rem', marginTop: '0.5rem', width: '100%' }}>
                                 ← Back to Sign In
-                            </button>
-                        </form>
-                    )}
-
-                    {/* ── STEP 2: Enter OTP + new password ── */}
-                    {forgotStep === 'sent' && (
-                        <form className="login-form" onSubmit={handleVerifyOTP}>
-                            {error && <div className="error-message" style={{ color: '#feb2b2', fontSize: '0.9rem', marginBottom: '0.5rem' }}>{error}</div>}
-                            {successMsg && <div style={{ color: '#9ae6b4', fontSize: '0.9rem', marginBottom: '0.5rem' }}>{successMsg}</div>}
-
-                            <div className="input-group">
-                                <ShieldCheck className="input-icon" size={20} />
-                                <input type="text" placeholder="6-digit OTP" value={otp} maxLength={6}
-                                    onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))} required
-                                    style={{ letterSpacing: '0.3rem', fontWeight: 'bold', fontSize: '1.1rem' }} />
-                            </div>
-
-                            <div className="input-group">
-                                <KeyRound className="input-icon" size={20} />
-                                <input type="password" placeholder="New Password (min 6 chars)" value={newPassword}
-                                    onChange={(e) => setNewPassword(e.target.value)} required minLength={6} />
-                            </div>
-
-                            <button type="submit" className="signin-btn" disabled={loading}>
-                                {loading ? 'Verifying...' : 'Reset Password'}
-                            </button>
-                            <button type="button" onClick={() => { setForgotStep('sending'); clearMessages(); }}
-                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#a0aec0', fontSize: '0.85rem', marginTop: '0.5rem', width: '100%' }}>
-                                ← Resend OTP
                             </button>
                         </form>
                     )}

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MessageSquare, Zap, Briefcase, Shield, FileText, X, User, MoreHorizontal, Paperclip, Send, LogOut } from 'lucide-react';
+import { getToken, clearToken } from './auth';
 import './Home.css';
 
 const Home = () => {
@@ -8,13 +9,13 @@ const Home = () => {
     const [unreadCount, setUnreadCount] = useState(0);
 
     const handleLogout = () => {
-        localStorage.removeItem('token');
+        clearToken();
         navigate('/login');
     };
 
     // Poll for unread message count every 5 seconds
     useEffect(() => {
-        const token = localStorage.getItem('token');
+        const token = getToken();
         if (!token) return;
 
         const checkUnread = async () => {
@@ -59,7 +60,7 @@ const Home = () => {
                 <p className="hero-subtitle">Real-Time Chat &amp; File Sharing Made Easy</p>
 
                 <div className="hero-buttons">
-                    <button className="btn-primary" onClick={() => navigate('/chat')}>
+                    <button className="btn-primary" onClick={() => navigate('/chat', { state: { openInbox: true } })}>
                         💬 Open Chat
                     </button>
                 </div>
@@ -184,7 +185,7 @@ const Home = () => {
             {unreadCount > 0 && (
                 <button
                     className="fab-chat"
-                    onClick={() => navigate('/chat')}
+                    onClick={() => navigate('/chat', { state: { openInbox: true } })}
                     title={`${unreadCount} new message${unreadCount > 1 ? 's' : ''}`}
                 >
                     <MessageSquare size={26} fill="white" color="white" />
