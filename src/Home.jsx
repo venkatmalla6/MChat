@@ -1,12 +1,69 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MessageSquare, Zap, Briefcase, Shield, FileText, X, User, MoreHorizontal, Paperclip, Send, LogOut } from 'lucide-react';
+import { MessageSquare, Zap, Briefcase, Shield, FileText, X, User, MoreHorizontal, Paperclip, Send, LogOut, ChevronRight } from 'lucide-react';
+import { auth, db } from './firebase';
+import { onAuthStateChanged } from 'firebase/auth';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { getToken, clearToken } from './auth';
 import './Home.css';
 
 const Home = () => {
     const navigate = useNavigate();
     const [unreadCount, setUnreadCount] = useState(0);
+    const [fireUser, setFireUser] = useState(null);
+    const [conversations, setConversations] = useState([]);
+    const [loadingConvs, setLoadingConvs] = useState(true);
+
+    // ── Auth guard ──
+    useEffect(() => {
+        const unsub = onAuthStateChanged(auth, (user) => {
+            if (!user) { navigate('/login'); return; }
+            setFireUser(user);
+        });
+        return () => unsub();
+    }, [navigate]);
+
+    // ── Realtime: conversations ──
+    useEffect(() => {
+        if (!fireUser) return;
+        const q = query(
+            collection(db, 'messages'),
+            where('participants', 'array-contains', fireUser.uid)
+        );
+
+        const unsub = onSnapshot(q, (snap) => {
+            const partnerMap = new Map();
+            snap.forEach(d => {
+                const data = d.data();
+                const isSender = data.sender_uid === fireUser.uid;
+                const partnerUid = isSender ? data.receiver_uid : data.sender_uid;
+                const partnerEmail = isSender ? data.receiver_email : data.sender_email;
+                const partnerName = isSender ? data.receiver_name : data.sender_name;
+                const partnerChatId = isSender ? data.receiver_chat_id : data.sender_chat_id;
+                const ts = data.created_at?.seconds || 0;
+
+                if (!partnerMap.has(partnerUid) || ts > (partnerMap.get(partnerUid).last_msg || 0)) {
+                    partnerMap.set(partnerUid, {
+                        uid: partnerUid,
+                        email: partnerEmail,
+                        name: partnerName,
+                        chat_id: partnerChatId,
+                        last_msg: ts,
+                    });
+                }
+            });
+            const sorted = [...partnerMap.values()].sort((a, b) => b.last_msg - a.last_msg);
+            setConversations(sorted);
+            setLoadingConvs(false);
+        });
+        return () => unsub();
+    }, [fireUser]);
+
+    const formatTime = (ts) => {
+        if (!ts) return '';
+        const d = new Date(ts * 1000);
+        return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    };
 
     const handleLogout = () => {
         clearToken();
@@ -59,14 +116,10 @@ const Home = () => {
                 <h1 className="hero-title">Connect Instantly with <span>MChat</span></h1>
                 <p className="hero-subtitle">Real-Time Chat &amp; File Sharing Made Easy</p>
 
-                <div className="hero-buttons">
-                    <button className="btn-primary" onClick={() => navigate('/chat', { state: { openInbox: true } })}>
-                        💬 Open Chat
-                    </button>
-                </div>
 
-                {/* Main Illustration Area */}
-                <div className="illustration-container">
+                {/* Main Illustration or Inbox Area */}
+                {!loadingConvs && conversations.length === 0 ? (
+                    <div className="illustration-container">
                     <div className="man-illustration">
                         <div className="man-body-shape"></div>
                         <div className="man-head-shape"></div>
@@ -160,7 +213,39 @@ const Home = () => {
                         <div className="float-file file-1"></div>
                         <div className="cloud-large-right"></div>
                     </div>
-                </div>
+                    </div>
+                ) : !loadingConvs && conversations.length > 0 ? (
+                    <div className="inbox-container">
+                        <div className="inbox-header">
+                            <h2>Your Chats</h2>
+                        </div>
+                        <div className="inbox-list">
+                            {conversations.map(conv => (
+                                <div 
+                                    key={conv.uid} 
+                                    className="inbox-item"
+                                    onClick={() => navigate('/chat', { state: { receiver: conv } })}
+                                >
+                                    <div className="inbox-avatar">
+                                        {conv.name.charAt(0).toUpperCase()}
+                                    </div>
+                                    <div className="inbox-info">
+                                        <div className="inbox-info-top">
+                                            <h4>{conv.name}</h4>
+                                            <span className="inbox-time">{formatTime(conv.last_msg)}</span>
+                                        </div>
+                                        <p className="inbox-sub">Chat ID: {conv.chat_id || 'Unknown'}</p>
+                                    </div>
+                                    <ChevronRight size={18} color="#a0aec0" className="inbox-arrow" />
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                ) : (
+                    <div className="inbox-container loading">
+                        <p>Loading chats...</p>
+                    </div>
+                )}
             </div>
 
             {/* Features Footer */}
