@@ -1,9 +1,0 @@
-CREATE TABLE expenses (
-    id INTEGER NOT NULL PRIMARY KEY,
-    amount FLOAT NOT NULL,
-    category VARCHAR NOT NULL,
-    date DATE NOT NULL,
-    description VARCHAR,
-    user_id INTEGER NOT NULL,
-    FOREIGN KEY(user_id) REFERENCES users(id)
-);
