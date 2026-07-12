@@ -119,6 +119,12 @@ const Home = () => {
 
                 {/* Main Illustration or Inbox Area */}
                 {!loadingConvs && conversations.length === 0 ? (
+                    <>
+                    <div className="hero-buttons">
+                        <button className="btn-primary" onClick={() => navigate('/chat')}>
+                            💬 Chat Now
+                        </button>
+                    </div>
                     <div className="illustration-container">
                     <div className="man-illustration">
                         <div className="man-body-shape"></div>
@@ -214,10 +220,14 @@ const Home = () => {
                         <div className="cloud-large-right"></div>
                     </div>
                     </div>
+                    </>
                 ) : !loadingConvs && conversations.length > 0 ? (
                     <div className="inbox-container">
-                        <div className="inbox-header">
+                        <div className="inbox-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <h2>Your Chats</h2>
+                            <button className="btn-primary" style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }} onClick={() => navigate('/chat')}>
+                                + New Chat
+                            </button>
                         </div>
                         <div className="inbox-list">
                             {conversations.map(conv => (
