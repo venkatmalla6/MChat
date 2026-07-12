@@ -64,12 +64,35 @@ const AuthRoute = ({ children }) => {
   return status === 'ok' ? <Navigate to="/home" replace /> : children;
 };
 
+const playNotificationSound = () => {
+  try {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) return;
+    const ctx = new AudioContext();
+    const osc = ctx.createOscillator();
+    const gainNode = ctx.createGain();
+    
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(1046.50, ctx.currentTime); // C6 note
+    
+    gainNode.gain.setValueAtTime(0, ctx.currentTime);
+    gainNode.gain.linearRampToValueAtTime(0.3, ctx.currentTime + 0.05);
+    gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+    
+    osc.connect(gainNode);
+    gainNode.connect(ctx.destination);
+    
+    osc.start();
+    osc.stop(ctx.currentTime + 0.5);
+  } catch (e) {
+    console.error("Sound error:", e);
+  }
+};
+
 /** Global Notification Listener for incoming messages */
 const NotificationHandler = () => {
   useEffect(() => {
     let unsub = () => {};
-    // Record the time this component mounts to avoid notifying for old messages
-    const mountTime = Date.now() / 1000;
 
     const unsubAuth = onAuthStateChanged(auth, (user) => {
       if (user) {
@@ -93,6 +116,10 @@ const NotificationHandler = () => {
               const data = change.doc.data();
               // Only alert if it's not sent by us
               if (data.sender_uid !== user.uid) {
+                // 1. Play the custom "ding" sound
+                playNotificationSound();
+                
+                // 2. Show the native popup notification
                 if ('Notification' in window && Notification.permission === 'granted') {
                   new Notification(`New message from ${data.sender_name}`, {
                     body: data.content
