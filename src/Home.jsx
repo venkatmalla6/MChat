@@ -5,6 +5,7 @@ import { auth, db } from './firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { getToken, clearToken } from './auth';
+import mchatLogo from './assets/mchat.png';
 import './Home.css';
 
 const Home = () => {
@@ -102,8 +103,8 @@ const Home = () => {
             {/* Navbar */}
             <nav className="navbar">
                 <div className="logo">
-                    <div className="logo-icon">
-                        <MessageSquare size={24} fill="white" color="white" />
+                    <div className="logo-icon" style={{ padding: 0, overflow: 'hidden' }}>
+                        <img src={mchatLogo} alt="MChat" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                     </div>
                     <span className="logo-text">MChat</span>
                 </div>

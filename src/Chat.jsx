@@ -15,6 +15,7 @@ import {
     updateDoc
 } from 'firebase/firestore';
 import { clearSession } from './auth';
+import mchatLogo from './assets/mchat.png';
 import './Chat.css';
 
 /** Returns a stable conversation ID from two UIDs (always same regardless of who sends first) */
@@ -320,7 +321,9 @@ const Chat = () => {
             <aside className="chat-sidebar">
                 <div className="sidebar-header">
                     <div className="logo">
-                        <div className="logo-icon"><MessageSquare size={20} fill="white" color="white" /></div>
+                        <div className="logo-icon" style={{ padding: 0, overflow: 'hidden' }}>
+                            <img src={mchatLogo} alt="MChat" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        </div>
                         <span className="logo-text">MChat</span>
                     </div>
                 </div>
