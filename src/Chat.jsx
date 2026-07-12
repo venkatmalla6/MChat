@@ -12,6 +12,7 @@ import {
     serverTimestamp,
     getDocs,
     limit,
+    updateDoc
 } from 'firebase/firestore';
 import { clearSession } from './auth';
 import './Chat.css';
@@ -162,7 +163,7 @@ const Chat = () => {
 
         const unsub = onSnapshot(q, { includeMetadataChanges: true }, (snap) => {
             const msgs = snap.docs
-                .map(d => ({ id: d.id, ...d.data() }))
+                .map(d => ({ id: d.id, ...d.data(), ref: d.ref }))
                 // Sort by created_at; pending writes have null — put them last so
                 // they still show immediately at the bottom.
                 .sort((a, b) => {
@@ -177,6 +178,16 @@ const Chat = () => {
 
         return () => unsub();
     }, [fireUser, receiver]);
+
+    // ── Mark messages as read ─────────────────────────────────────────────────
+    useEffect(() => {
+        if (!fireUser || !receiver) return;
+        messages.forEach(msg => {
+            if (msg.receiver_uid === fireUser.uid && msg.is_read === false && msg.ref) {
+                updateDoc(msg.ref, { is_read: true }).catch(err => console.error(err));
+            }
+        });
+    }, [messages, fireUser, receiver]);
 
     // ── Lookup user by Chat ID ────────────────────────────────────────────────
     const handleLookup = async (e) => {

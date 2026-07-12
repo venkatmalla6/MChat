@@ -42,15 +42,21 @@ const Home = () => {
                 const partnerChatId = isSender ? data.receiver_chat_id : data.sender_chat_id;
                 const ts = data.created_at?.seconds || 0;
 
-                if (!partnerMap.has(partnerUid) || ts > (partnerMap.get(partnerUid).last_msg || 0)) {
-                    partnerMap.set(partnerUid, {
+                let current = partnerMap.get(partnerUid);
+                if (!current || ts > current.last_msg) {
+                    current = {
                         uid: partnerUid,
                         email: partnerEmail,
                         name: partnerName,
                         chat_id: partnerChatId,
                         last_msg: ts,
-                    });
+                        unread: current ? current.unread : false,
+                    };
                 }
+                if (data.receiver_uid === fireUser.uid && data.is_read === false) {
+                    current.unread = true;
+                }
+                partnerMap.set(partnerUid, current);
             });
             const sorted = [...partnerMap.values()].sort((a, b) => b.last_msg - a.last_msg);
             setConversations(sorted);
@@ -241,8 +247,11 @@ const Home = () => {
                                     </div>
                                     <div className="inbox-info">
                                         <div className="inbox-info-top">
-                                            <h4>{conv.name}</h4>
-                                            <span className="inbox-time">{formatTime(conv.last_msg)}</span>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                <h4 style={{ fontWeight: conv.unread ? '700' : '500', color: conv.unread ? 'white' : '#e2e8f0' }}>{conv.name}</h4>
+                                                {conv.unread && <span className="unread-dot"></span>}
+                                            </div>
+                                            <span className="inbox-time" style={{ color: conv.unread ? '#4299e1' : '#718096', fontWeight: conv.unread ? '600' : 'normal' }}>{formatTime(conv.last_msg)}</span>
                                         </div>
                                         <p className="inbox-sub">Chat ID: {conv.chat_id || 'Unknown'}</p>
                                     </div>
