@@ -6,8 +6,9 @@ import Chat from './Chat';
 import Features from './Features';
 import About from './About';
 import Profile from './Profile';
-import { auth } from './firebase';
+import { auth, db } from './firebase';
 import { onAuthStateChanged } from 'firebase/auth';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import './App.css';
 
 /**
@@ -63,9 +64,58 @@ const AuthRoute = ({ children }) => {
   return status === 'ok' ? <Navigate to="/home" replace /> : children;
 };
 
+/** Global Notification Listener for incoming messages */
+const NotificationHandler = () => {
+  useEffect(() => {
+    let unsub = () => {};
+    // Record the time this component mounts to avoid notifying for old messages
+    const mountTime = Date.now() / 1000;
+
+    const unsubAuth = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        if ('Notification' in window && Notification.permission === 'default') {
+          Notification.requestPermission();
+        }
+
+        const q = query(
+          collection(db, 'messages'),
+          where('participants', 'array-contains', user.uid)
+        );
+
+        unsub = onSnapshot(q, (snap) => {
+          snap.docChanges().forEach(change => {
+            if (change.type === 'added') {
+              const data = change.doc.data();
+              const msgTime = data.created_at?.seconds || 0;
+              // Only alert if the message was created after we mounted, and it's not sent by us
+              if (msgTime > mountTime && data.sender_uid !== user.uid) {
+                if ('Notification' in window && Notification.permission === 'granted') {
+                  new Notification(`New message from ${data.sender_name}`, {
+                    body: data.content
+                  });
+                }
+              }
+            }
+          });
+        });
+      } else {
+        unsub();
+      }
+    });
+
+    return () => {
+      unsubAuth();
+      unsub();
+    };
+  }, []);
+
+  return null;
+};
+
 function App() {
   return (
     <Router>
+      <NotificationHandler />
       <Routes>
         <Route path="/" element={<Navigate to="/login" replace />} />
         <Route path="/login" element={<AuthRoute><Login /></AuthRoute>} />

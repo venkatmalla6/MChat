@@ -8,12 +8,12 @@ import {
     sendPasswordResetEmail,
     updateProfile,
 } from 'firebase/auth';
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp, collection, query, where, getDocs, limit } from 'firebase/firestore';
 import { applyPersistence } from './auth';
 import './Login.css';
 
-/** Generate a random Chat ID like MCH4F2A */
-const genChatId = () => 'MCH' + Math.random().toString(36).substr(2, 4).toUpperCase();
+/** Generate a random 6-character alphanumeric Chat ID */
+const genChatId = () => Math.random().toString(36).substr(2, 6).toUpperCase();
 
 const Login = () => {
     const [showPassword, setShowPassword] = useState(false);
@@ -56,7 +56,29 @@ const Login = () => {
     // ── Login ───────────────────────────────────────────────────────────────
     const handleLogin = async () => {
         await applyPersistence(rememberMe);
-        await signInWithEmailAndPassword(auth, email, password);
+        let loginEmail = email.trim();
+
+        // If the user entered a Chat ID (no @ symbol)
+        if (!loginEmail.includes('@')) {
+            try {
+                const q = query(
+                    collection(db, 'users'),
+                    where('chat_id', '==', loginEmail.toUpperCase()),
+                    limit(1)
+                );
+                const snap = await getDocs(q);
+                if (!snap.empty) {
+                    loginEmail = snap.docs[0].data().email;
+                } else {
+                    throw new Error('auth/user-not-found');
+                }
+            } catch (err) {
+                if (err.message === 'auth/user-not-found') throw err;
+                throw new Error("Unable to verify Chat ID. Please log in using your Email Address.");
+            }
+        }
+
+        await signInWithEmailAndPassword(auth, loginEmail, password);
         navigate('/home');
     };
 
@@ -169,7 +191,7 @@ const Login = () => {
 
                             <div className="input-group">
                                 <Mail className="input-icon" size={20} />
-                                <input type="email" placeholder="Your email" value={email}
+                                <input type="text" placeholder="Email or Chat ID" value={email}
                                     onChange={(e) => setEmail(e.target.value)} required />
                             </div>
 

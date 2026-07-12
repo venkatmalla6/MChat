@@ -286,10 +286,10 @@ const Chat = () => {
                             <div className="modal-input-wrap">
                                 <Hash size={18} className="modal-input-icon" />
                                 <input
-                                    type="text" placeholder="e.g. MCH4F2A"
+                                    type="text" placeholder="e.g. A1B2C3"
                                     value={chatIdInput}
                                     onChange={e => setChatIdInput(e.target.value.toUpperCase())}
-                                    maxLength={10} autoFocus required
+                                    maxLength={6} autoFocus required
                                     style={{ textTransform: 'uppercase', letterSpacing: '0.15rem', fontWeight: 600 }}
                                 />
                             </div>

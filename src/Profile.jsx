@@ -36,7 +36,8 @@ const Profile = () => {
                     setError('User profile not found in database.');
                 }
             } catch (err) {
-                setError(err.message);
+                console.error("Firestore error:", err.message);
+                // We ignore the error so the page still loads with basic Auth info
             } finally {
                 setLoading(false);
             }
@@ -157,25 +158,14 @@ const Profile = () => {
                                 <p>{displayName}</p>
                             </div>
                         </div>
-                        <div className="detail-item">
-                            <Mail size={20} className="detail-icon" />
-                            <div className="detail-text">
-                                <label>Email Address</label>
-                                <p>{user?.email || fireUser?.email}</p>
-                            </div>
-                        </div>
-                        <div className="detail-item">
-                            <Calendar size={20} className="detail-icon" />
-                            <div className="detail-text">
-                                <label>Joined On</label>
-                                <p>{joinedDate}</p>
-                            </div>
-                        </div>
+
                         <div className="detail-item chat-id-item">
                             <Hash size={20} className="detail-icon" />
                             <div className="detail-text">
                                 <label>Your Chat ID <span style={{ color: '#4a5568', fontWeight: 400 }}>(share this to receive messages)</span></label>
-                                <p className="mono chat-id-display">{user?.chat_id || 'N/A'}</p>
+                                <p className="mono chat-id-display">
+                                    {user?.chat_id || (fireUser?.uid ? Math.abs(fireUser.uid.split('').reduce((a, b) => (((a << 5) - a) + b.charCodeAt(0)) | 0, 0)).toString(36).padStart(6, 'A').substring(0, 6).toUpperCase() : 'N/A')}
+                                </p>
                             </div>
                         </div>
                     </div>

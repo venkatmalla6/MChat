@@ -56,8 +56,8 @@ export default {
                     return new Response(JSON.stringify({ error: "Email and password required" }), { status: 400, headers: corsHeaders });
                 }
                 const hashedPassword = await hashPassword(password);
-                // Generate unique 6-char Chat ID e.g. MCH4F2A
-                const chatId = 'MCH' + Math.random().toString(36).substr(2, 4).toUpperCase();
+                // Generate unique 6-character alphanumeric Chat ID
+                const chatId = Math.random().toString(36).substr(2, 6).toUpperCase();
                 const result = await env.DB.prepare(
                     "INSERT INTO users (email, password, name, chat_id) VALUES (?, ?, ?, ?)"
                 ).bind(email, hashedPassword, name || email.split('@')[0], chatId).run();
@@ -88,8 +88,8 @@ export default {
                     // ── Ensure user always has a chat_id ───────────────────────
                     let chatId = user.chat_id;
                     if (!chatId) {
-                        // Generate a unique chat_id for older accounts that lack one
-                        chatId = 'MCH' + Math.random().toString(36).substr(2, 4).toUpperCase();
+                        // Generate a unique 6-character alphanumeric chat_id for older accounts that lack one
+                        chatId = Math.random().toString(36).substr(2, 6).toUpperCase();
                         await env.DB.prepare(
                             "UPDATE users SET chat_id = ? WHERE id = ? AND (chat_id IS NULL OR chat_id = '')"
                         ).bind(chatId, user.id).run();
