@@ -321,7 +321,7 @@ const Chat = () => {
             <aside className="chat-sidebar">
                 <div className="sidebar-header">
                     <div className="logo">
-                        <div className="logo-icon" style={{ padding: 0, overflow: 'hidden' }}>
+                        <div className="logo-icon" style={{ width: '32px', height: '32px', padding: 0, overflow: 'hidden' }}>
                             <img src={mchatLogo} alt="MChat" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                         </div>
                         <span className="logo-text">MChat</span>
@@ -424,13 +424,18 @@ const Chat = () => {
                         const showAvatar = i === 0 || messages[i - 1]?.sender_uid !== msg.sender_uid;
                         return (
                             <div key={msg.id} className={`message-row ${isMe ? 'me' : 'them'}`}>
-                                {!isMe && (
-                                    <div className={`msg-avatar ${showAvatar ? '' : 'invisible'}`}>
-                                        {msg.sender_name?.[0]?.toUpperCase() || '?'}
-                                    </div>
-                                )}
+                                <div className={`msg-avatar ${isMe ? 'avatar-me' : ''} ${showAvatar ? '' : 'invisible'}`}>
+                                    {isMe 
+                                        ? (currentUser.name?.[0]?.toUpperCase() || '?') 
+                                        : (msg.sender_name?.[0]?.toUpperCase() || '?')
+                                    }
+                                </div>
                                 <div className="message-group">
-                                    {showAvatar && !isMe && <span className="msg-sender">{msg.sender_name}</span>}
+                                    {showAvatar && (
+                                        <span className="msg-sender">
+                                            {isMe ? currentUser.name : msg.sender_name}
+                                        </span>
+                                    )}
                                     <div className="msg-bubble-wrap">
                                         <div className={`msg-bubble ${isMe ? 'bubble-me' : 'bubble-them'}`}>
                                             {msg.content}
@@ -445,11 +450,6 @@ const Chat = () => {
                                         </span>
                                     </div>
                                 </div>
-                                {isMe && (
-                                    <div className={`msg-avatar avatar-me ${showAvatar ? '' : 'invisible'}`}>
-                                        {currentUser.email[0]?.toUpperCase()}
-                                    </div>
-                                )}
                             </div>
                         );
                     })}

@@ -103,7 +103,7 @@ const Home = () => {
             {/* Navbar */}
             <nav className="navbar">
                 <div className="logo">
-                    <div className="logo-icon" style={{ padding: 0, overflow: 'hidden' }}>
+                    <div className="logo-icon" style={{ width: '40px', height: '40px', padding: 0, overflow: 'hidden' }}>
                         <img src={mchatLogo} alt="MChat" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                     </div>
                     <span className="logo-text">MChat</span>

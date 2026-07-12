@@ -291,7 +291,7 @@
 }
 
 .message-row.me {
-    flex-direction: row-reverse;
+    justify-content: flex-end;
 }
 
 .msg-avatar {
@@ -334,6 +334,11 @@
     color: #718096;
     margin-left: 4px;
     margin-bottom: 2px;
+}
+
+.me .msg-sender {
+    margin-left: 0;
+    margin-right: 4px;
 }
 
 .msg-bubble-wrap {
