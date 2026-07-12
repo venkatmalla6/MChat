@@ -82,13 +82,17 @@ const NotificationHandler = () => {
           where('participants', 'array-contains', user.uid)
         );
 
+        let initialLoad = true;
         unsub = onSnapshot(q, (snap) => {
+          if (initialLoad) {
+            initialLoad = false;
+            return;
+          }
           snap.docChanges().forEach(change => {
             if (change.type === 'added') {
               const data = change.doc.data();
-              const msgTime = data.created_at?.seconds || 0;
-              // Only alert if the message was created after we mounted, and it's not sent by us
-              if (msgTime > mountTime && data.sender_uid !== user.uid) {
+              // Only alert if it's not sent by us
+              if (data.sender_uid !== user.uid) {
                 if ('Notification' in window && Notification.permission === 'granted') {
                   new Notification(`New message from ${data.sender_name}`, {
                     body: data.content
