@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
-import { MessageSquare, Send, User, LogOut, ArrowLeft, Hash, Search, X, Star } from 'lucide-react';
+import { MessageSquare, Send, User, LogOut, ArrowLeft, Hash, Search, X, Star, Check, CheckCheck } from 'lucide-react';
 import { auth, db } from './firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import {
@@ -432,7 +432,14 @@ const Chat = () => {
                                         <div className={`msg-bubble ${isMe ? 'bubble-me' : 'bubble-them'}`}>
                                             {msg.content}
                                         </div>
-                                        <span className="msg-time">{formatTime(msg.created_at)}</span>
+                                        <span className="msg-time" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                            {formatTime(msg.created_at)}
+                                            {isMe && (
+                                                <span className="read-receipt" style={{ display: 'flex' }}>
+                                                    {msg.is_read ? <CheckCheck size={14} color="#4299e1" /> : <Check size={14} color="#a0aec0" />}
+                                                </span>
+                                            )}
+                                        </span>
                                     </div>
                                 </div>
                                 {isMe && (
